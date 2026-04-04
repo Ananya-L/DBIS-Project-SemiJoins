@@ -1,0 +1,26 @@
+services:
+  site_b:
+    image: postgres:16
+    container_name: dbis_site_b
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: site_b_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./infra/site-b-init:/docker-entrypoint-initdb.d
+
+  site_a:
+    image: postgres:16
+    container_name: dbis_site_a
+    depends_on:
+      - site_b
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: site_a_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./infra/site-a-init:/docker-entrypoint-initdb.d
