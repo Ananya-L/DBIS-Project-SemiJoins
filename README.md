@@ -36,6 +36,12 @@ docker compose up -d
 powershell -ExecutionPolicy Bypass -File scripts/run_benchmark.ps1
 ```
 
+Run full end-to-end demo (core + bonus + selectivity profiler + summary):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/run_full_demo.ps1
+```
+
 Manual benchmark run:
 
 ```powershell
@@ -57,6 +63,8 @@ docker compose down
 5. `infra/site-a-init/02_fdw_semijoin.sql`: FDW setup and all semijoin strategies.
 6. `scripts/benchmark.sql`: Core `EXPLAIN ANALYZE` and correctness check.
 7. `scripts/bonus_benchmark.sql`: Auto strategy, staged strategy, and metric logging.
+8. `scripts/selectivity_profile.sql`: Low/medium/high selectivity profiling with winner label.
+9. `scripts/run_full_demo.ps1`: One-command, submission-ready demo runner.
 
 ## Bonus implementations
 
@@ -74,6 +82,36 @@ Run bonus benchmark:
 ```powershell
 docker exec -i dbis_site_a psql -U postgres -d site_a_db -f /dev/stdin < scripts/bonus_benchmark.sql
 ```
+
+Run selectivity profile:
+
+```powershell
+docker exec -i dbis_site_a psql -U postgres -d site_a_db -f /dev/stdin < scripts/selectivity_profile.sql
+```
+
+## Troubleshooting Checklist
+
+1. Containers not running:
+- Run `docker compose up -d`.
+- Check `docker compose ps` for `dbis_site_a` and `dbis_site_b` status.
+
+2. Missing SQL objects or function mismatch after edits:
+- Re-apply init scripts:
+   - `infra/site-b-init/02_semijoin_stage.sql`
+   - `infra/site-a-init/02_fdw_semijoin.sql`
+
+3. FDW connection error from Site A to Site B:
+- Confirm server name in FDW options is `site_b`.
+- Confirm both containers are on same compose network.
+
+4. Empty or inconsistent benchmark results:
+- Recreate clean environment with `docker compose down -v` then `docker compose up -d`.
+- Re-run `scripts/run_full_demo.ps1`.
+
+5. Semijoin appears slower than baseline:
+- This can be expected for high match-rate workloads.
+- Use `scripts/selectivity_profile.sql` to show low/medium/high selectivity behavior.
+- Use adaptive strategy output from `fetch_b_semijoin_auto` for report discussion.
 
 ## Notes
 
