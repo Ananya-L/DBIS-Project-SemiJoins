@@ -12,6 +12,73 @@ CREATE TABLE IF NOT EXISTS semijoin_tuning_history (
   recommended_staged_threshold integer NOT NULL
 );
 
+DROP FUNCTION IF EXISTS measure_workload_band(integer[], integer);
+CREATE OR REPLACE FUNCTION measure_workload_band(
+  keys integer[],
+  chunk_size integer DEFAULT 500
+)
+RETURNS TABLE (
+  strategy text,
+  elapsed_ms numeric(12,3),
+  remote_rows bigint,
+  join_rows bigint
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  t0 timestamptz;
+  rr bigint;
+  jr bigint;
+BEGIN
+  t0 := clock_timestamp();
+  SELECT count(*)
+  INTO jr
+  FROM a_local a
+  JOIN b_remote_ft b
+    ON b.join_key = a.join_key
+  WHERE a.join_key = ANY(keys);
+  RETURN QUERY
+  SELECT 'baseline'::text,
+         round((EXTRACT(EPOCH FROM clock_timestamp() - t0) * 1000.0)::numeric, 3),
+         (SELECT count(*) FROM b_remote_ft),
+         jr;
+
+  t0 := clock_timestamp();
+  SELECT count(*)
+  INTO rr
+  FROM b_remote_ft b
+  WHERE b.join_key = ANY(keys);
+  SELECT count(*)
+  INTO jr
+  FROM a_local a
+  JOIN b_remote_ft b
+    ON b.join_key = a.join_key
+  WHERE a.join_key = ANY(keys)
+    AND b.join_key = ANY(keys);
+  RETURN QUERY
+  SELECT 'pushed_filter'::text,
+         round((EXTRACT(EPOCH FROM clock_timestamp() - t0) * 1000.0)::numeric, 3),
+         rr,
+         jr;
+
+  t0 := clock_timestamp();
+  SELECT count(*)
+  INTO rr
+  FROM fetch_b_semijoin(chunk_size);
+  SELECT count(*)
+  INTO jr
+  FROM a_local a
+  JOIN fetch_b_semijoin(chunk_size) b
+    ON b.join_key = a.join_key
+  WHERE a.join_key = ANY(keys);
+  RETURN QUERY
+  SELECT 'batched_any'::text,
+         round((EXTRACT(EPOCH FROM clock_timestamp() - t0) * 1000.0)::numeric, 3),
+         rr,
+         jr;
+END;
+$$;
+
 DROP FUNCTION IF EXISTS autotune_semijoin_thresholds(integer, integer);
 CREATE OR REPLACE FUNCTION autotune_semijoin_thresholds(
   rounds integer DEFAULT 5,
