@@ -72,6 +72,18 @@ Export CSV and chart visuals:
 powershell -ExecutionPolicy Bypass -File scripts/export_visuals.ps1
 ```
 
+Run 3-minute judge rehearsal:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/judge_rehearsal.ps1
+```
+
+Create final submission bundle:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/create_submission_bundle.ps1
+```
+
 Run statistical benchmark (avg/p95/stddev across multiple rounds):
 
 ```powershell
@@ -118,6 +130,11 @@ docker compose down
 18. `scripts/export_visuals.ps1`: CSV exports and chart HTML generation.
 19. `docs/ARCHITECTURE.md`: architecture diagram.
 20. `docs/SUBMISSION_CHECKLIST.md`: final validation checklist.
+21. `docs/RISK_REGISTER.md`: final risk and mitigation table.
+22. `docs/DEMO_CHEATSHEET.md`: quick command runbook for live demo.
+23. `dashboard/index.html`: lightweight local chart dashboard for CSV outputs.
+24. `scripts/judge_rehearsal.ps1`: compact 3-minute rehearsal script.
+25. `scripts/create_submission_bundle.ps1`: packages submission artifacts into zip.
 
 ## Bonus implementations
 

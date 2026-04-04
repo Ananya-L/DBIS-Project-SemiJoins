@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Semijoin Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: #f8fbff;
+      --ink: #0f1f2e;
+      --accent: #0d6efd;
+      --accent-2: #25a18e;
+      --card: #ffffff;
+      --line: #dce7f2;
+    }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      background: radial-gradient(circle at 10% 10%, #e8f1fb, var(--bg) 55%);
+      color: var(--ink);
+    }
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 6px 24px rgba(13, 110, 253, 0.06);
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: 1.7rem;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 12px;
+    }
+    .kpi {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px;
+    }
+    .kpi .label { font-size: 0.86rem; opacity: 0.8; }
+    .kpi .val { font-size: 1.2rem; font-weight: 600; margin-top: 6px; }
+    .hint { font-size: 0.9rem; opacity: 0.85; }
+    canvas { max-height: 360px; }
+    input[type=file] { display:block; margin-top:8px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Semijoin Performance Dashboard</h1>
+      <div class="hint">Load strategy CSV from reports/strategy_stats_*.csv and optional selectivity CSV from reports/selectivity_*.csv.</div>
+      <label>Strategy CSV<input id="strategyFile" type="file" accept=".csv" /></label>
+      <label>Selectivity CSV<input id="selectivityFile" type="file" accept=".csv" /></label>
+    </div>
+
+    <div class="card grid" id="kpis"></div>
+
+    <div class="card">
+      <canvas id="latencyChart"></canvas>
+    </div>
+
+    <div class="card">
+      <canvas id="rowsChart"></canvas>
+    </div>
+
+    <div class="card">
+      <canvas id="selectivityChart"></canvas>
+    </div>
+  </div>
+
+  <script>
+    const strategyInput = document.getElementById('strategyFile');
+    const selectivityInput = document.getElementById('selectivityFile');
+    const kpis = document.getElementById('kpis');
+    let latencyChart, rowsChart, selectivityChart;
+
+    function parseCsv(text) {
+      const lines = text.trim().split(/\r?\n/);
+      const headers = lines[0].split(',').map(h => h.trim());
+      const rows = lines.slice(1).map(line => {
+        const cols = line.split(',').map(c => c.trim());
+        const obj = {};
+        headers.forEach((h, i) => obj[h] = cols[i]);
+        return obj;
+      });
+      return { headers, rows };
+    }
+
+    function renderKpis(rows) {
+      if (!rows.length) return;
+      const sorted = [...rows].sort((a, b) => Number(a.avg_ms) - Number(b.avg_ms));
+      const winner = sorted[0];
+      const cards = [
+        { label: 'Fastest Strategy', val: winner.strategy },
+        { label: 'Winner Avg (ms)', val: Number(winner.avg_ms).toFixed(3) },
+        { label: 'Winner P95 (ms)', val: Number(winner.p95_ms).toFixed(3) },
+        { label: 'Avg Remote Rows', val: Number(winner.avg_remote_rows).toFixed(0) }
+      ];
+      kpis.innerHTML = cards.map(c => `<div class="kpi"><div class="label">${c.label}</div><div class="val">${c.val}</div></div>`).join('');
+    }
+
+    function renderStrategyCharts(rows) {
+      const labels = rows.map(r => r.strategy);
+      const avg = rows.map(r => Number(r.avg_ms));
+      const p95 = rows.map(r => Number(r.p95_ms));
+      const remote = rows.map(r => Number(r.avg_remote_rows));
+      const join = rows.map(r => Number(r.avg_join_rows));
+
+      if (latencyChart) latencyChart.destroy();
+      latencyChart = new Chart(document.getElementById('latencyChart'), {
+        type: 'bar',
+        data: { labels, datasets: [
+          { label: 'avg_ms', data: avg, backgroundColor: 'rgba(13,110,253,0.6)' },
+          { label: 'p95_ms', data: p95, backgroundColor: 'rgba(37,161,142,0.6)' }
+        ]},
+        options: { plugins: { title: { display: true, text: 'Latency by Strategy' } } }
+      });
+
+      if (rowsChart) rowsChart.destroy();
+      rowsChart = new Chart(document.getElementById('rowsChart'), {
+        type: 'bar',
+        data: { labels, datasets: [
+          { label: 'avg_remote_rows', data: remote, backgroundColor: 'rgba(13,110,253,0.5)' },
+          { label: 'avg_join_rows', data: join, backgroundColor: 'rgba(37,161,142,0.5)' }
+        ]},
+        options: { plugins: { title: { display: true, text: 'Rows by Strategy' } } }
+      });
+    }
+
+    function renderSelectivity(rows) {
+      const labels = rows.map(r => r.tier);
+      const local = rows.map(r => Number(r.local_rows));
+      const pushed = rows.map(r => Number(r.pushed_remote_rows));
+
+      if (selectivityChart) selectivityChart.destroy();
+      selectivityChart = new Chart(document.getElementById('selectivityChart'), {
+        type: 'line',
+        data: { labels, datasets: [
+          { label: 'local_rows', data: local, borderColor: '#0d6efd' },
+          { label: 'pushed_remote_rows', data: pushed, borderColor: '#25a18e' }
+        ]},
+        options: { plugins: { title: { display: true, text: 'Selectivity Profile' } } }
+      });
+    }
+
+    strategyInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const text = await file.text();
+      const { rows } = parseCsv(text);
+      renderKpis(rows);
+      renderStrategyCharts(rows);
+    });
+
+    selectivityInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const text = await file.text();
+      const { rows } = parseCsv(text);
+      renderSelectivity(rows);
+    });
+  </script>
+</body>
+</html>
