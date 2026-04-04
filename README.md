@@ -8,7 +8,9 @@ This repository contains a complete, runnable two-site PostgreSQL prototype that
 2. Site B remote table: `b_remote`.
 3. FDW foreign table on Site A: `b_remote_ft`.
 4. Semijoin function on Site A: `fetch_b_semijoin(chunk_size)`.
-5. Benchmark script comparing baseline join vs semijoin-based join.
+5. Bonus staged semijoin strategy via remote key staging table.
+6. Auto strategy chooser: batched, staged, or baseline fallback.
+7. Benchmark scripts comparing strategies and logging metrics.
 
 ## Why this is semijoin optimization
 
@@ -50,9 +52,28 @@ docker compose down
 
 1. `docker-compose.yml`: Two PostgreSQL nodes.
 2. `infra/site-b-init/01_schema.sql`: Remote table and data.
-3. `infra/site-a-init/01_schema.sql`: Local table and data.
-4. `infra/site-a-init/02_fdw_semijoin.sql`: FDW setup and semijoin function.
-5. `scripts/benchmark.sql`: `EXPLAIN ANALYZE` and correctness check.
+3. `infra/site-b-init/02_semijoin_stage.sql`: Remote staging table for bonus strategy.
+4. `infra/site-a-init/01_schema.sql`: Local table and data.
+5. `infra/site-a-init/02_fdw_semijoin.sql`: FDW setup and all semijoin strategies.
+6. `scripts/benchmark.sql`: Core `EXPLAIN ANALYZE` and correctness check.
+7. `scripts/bonus_benchmark.sql`: Auto strategy, staged strategy, and metric logging.
+
+## Bonus implementations
+
+1. Staged key semijoin (`fetch_b_semijoin_staged`):
+   - Writes distinct local keys to a remote staging table.
+   - Performs remote-side join between staged keys and remote relation.
+2. Adaptive strategy (`fetch_b_semijoin_auto`):
+   - Chooses `batched_any`, `staged_remote_join`, or `baseline_remote_scan` by key cardinality thresholds.
+3. Benchmark framework:
+   - `benchmark_semijoin_strategies` compares three strategies in one call.
+   - `run_and_log_benchmark` stores experiment results in `semijoin_run_metrics`.
+
+Run bonus benchmark:
+
+```powershell
+docker exec -i dbis_site_a psql -U postgres -d site_a_db -f /dev/stdin < scripts/bonus_benchmark.sql
+```
 
 ## Notes
 
