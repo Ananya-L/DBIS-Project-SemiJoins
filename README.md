@@ -42,6 +42,36 @@ Run full end-to-end demo (core + bonus + selectivity profiler + summary):
 powershell -ExecutionPolicy Bypass -File scripts/run_full_demo.ps1
 ```
 
+Run reproducible reset (fresh deterministic state):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/reset_reproducible_state.ps1
+```
+
+Run fault-injection tests:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/run_fault_tests.ps1
+```
+
+Run compact judge mode:
+
+```powershell
+docker exec -i dbis_site_a psql -U postgres -d site_a_db -f /dev/stdin < scripts/judge_mode.sql
+```
+
+Run threshold auto-tuner:
+
+```powershell
+docker exec -i dbis_site_a psql -U postgres -d site_a_db -f /dev/stdin < scripts/auto_tune.sql
+```
+
+Export CSV and chart visuals:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/export_visuals.ps1
+```
+
 Run statistical benchmark (avg/p95/stddev across multiple rounds):
 
 ```powershell
@@ -80,6 +110,14 @@ docker compose down
 10. `scripts/statistical_benchmark.sql`: Multi-run statistical benchmark (avg/p95/stddev).
 11. `scripts/generate_report.ps1`: Auto-generates a timestamped markdown report in `reports/`.
 12. `docs/VIVA_PACK.md`: Slide outline and speaking scripts for viva.
+13. `infra/site-a-init/03_advanced_tools.sql`: auto-tuner and tuning-history objects.
+14. `scripts/judge_mode.sql`: compact PASS/FAIL plus strategy ranking output.
+15. `scripts/auto_tune.sql`: executes threshold auto-tuner and history view.
+16. `scripts/run_fault_tests.ps1`: restart and credential fault injection with recovery checks.
+17. `scripts/reset_reproducible_state.ps1`: deterministic reset flow.
+18. `scripts/export_visuals.ps1`: CSV exports and chart HTML generation.
+19. `docs/ARCHITECTURE.md`: architecture diagram.
+20. `docs/SUBMISSION_CHECKLIST.md`: final validation checklist.
 
 ## Bonus implementations
 
