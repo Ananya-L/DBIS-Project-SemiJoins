@@ -61,11 +61,11 @@ BEGIN
 
   FOR key_batch IN
     WITH keys AS (
-      SELECT DISTINCT join_key,
-             ((row_number() OVER (ORDER BY join_key) - 1) / chunk_size) AS grp
-      FROM a_local
+      SELECT DISTINCT a.join_key,
+             ((row_number() OVER (ORDER BY a.join_key) - 1) / chunk_size) AS grp
+      FROM a_local a
     )
-    SELECT array_agg(join_key ORDER BY join_key)
+    SELECT array_agg(keys.join_key ORDER BY keys.join_key)
     FROM keys
     GROUP BY grp
     ORDER BY grp
