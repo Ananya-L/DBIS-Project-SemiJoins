@@ -1,0 +1,45 @@
+2026-04-29 18:43:44.883 IST [26832] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0, 64-bit
+2026-04-29 18:43:44.883 IST [26832] LOG:  listening on IPv4 address "127.0.0.1", port 5432
+2026-04-29 18:43:44.887 IST [26832] LOG:  listening on Unix socket "/tmp/.s.PGSQL.5432"
+2026-04-29 18:43:44.893 IST [26838] LOG:  database system was shut down at 2026-04-29 18:43:34 IST
+2026-04-29 18:43:44.900 IST [26832] LOG:  database system is ready to accept connections
+2026-04-29 18:43:55.386 IST [26854] FATAL:  database "tanvi" does not exist
+2026-04-29 18:45:27.702 IST [26887] ERROR:  server "remote_server" does not exist
+2026-04-29 18:45:27.702 IST [26887] STATEMENT:  CREATE FOREIGN TABLE ft_test_data (
+	    id INT,
+	    value INT
+	)
+	SERVER remote_server
+	OPTIONS (table_name 'test_data');
+2026-04-29 18:45:50.831 IST [26887] ERROR:  extension "postgres_fdw" is not available
+2026-04-29 18:45:50.831 IST [26887] HINT:  The extension must first be installed on the system where PostgreSQL is running.
+2026-04-29 18:45:50.831 IST [26887] STATEMENT:  CREATE EXTENSION postgres_fdw;
+2026-04-29 18:48:44.992 IST [26836] LOG:  checkpoint starting: time
+2026-04-29 18:48:55.299 IST [26836] LOG:  checkpoint complete: wrote 102 buffers (0.6%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=10.269 s, sync=0.010 s, total=10.308 s; sync files=53, longest=0.003 s, average=0.001 s; distance=522 kB, estimate=522 kB; lsn=0/17E39D8, redo lsn=0/17E3948
+2026-04-29 18:54:08.747 IST [26991] ERROR:  could not connect to server "remote_server"
+2026-04-29 18:54:08.747 IST [26991] DETAIL:  connection to server at "127.0.0.1", port 5433 failed: FATAL:  role "your_username" does not exist
+2026-04-29 18:54:08.747 IST [26991] STATEMENT:  SELECT COUNT(*) FROM ft_test_data;
+2026-04-29 18:54:33.707 IST [26991] ERROR:  user mapping for "tanvi" already exists for server "remote_server"
+2026-04-29 18:54:33.707 IST [26991] STATEMENT:  CREATE USER MAPPING FOR CURRENT_USER
+	SERVER remote_server
+	OPTIONS (user 'postgres');
+2026-04-29 18:54:57.152 IST [26991] ERROR:  user mapping for "tanvi" already exists for server "remote_server"
+2026-04-29 18:54:57.152 IST [26991] STATEMENT:  CREATE USER MAPPING FOR CURRENT_USER
+	SERVER remote_server
+	OPTIONS (user 'postgres');
+2026-04-29 18:55:47.660 IST [26991] ERROR:  could not connect to server "remote_server"
+2026-04-29 18:55:47.660 IST [26991] DETAIL:  connection to server at "127.0.0.1", port 5433 failed: FATAL:  role "your_username" does not exist
+2026-04-29 18:55:47.660 IST [26991] STATEMENT:  SELECT COUNT(*) FROM ft_test_data;
+2026-04-29 18:58:44.490 IST [26836] LOG:  checkpoint starting: time
+2026-04-29 18:58:44.930 IST [26836] LOG:  checkpoint complete: wrote 4 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.405 s, sync=0.006 s, total=0.440 s; sync files=5, longest=0.004 s, average=0.002 s; distance=16 kB, estimate=471 kB; lsn=0/17E7A20, redo lsn=0/17E79C8
+2026-04-29 19:03:44.942 IST [26836] LOG:  checkpoint starting: time
+2026-04-29 19:03:45.559 IST [26836] LOG:  checkpoint complete: wrote 6 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.605 s, sync=0.003 s, total=0.618 s; sync files=7, longest=0.002 s, average=0.001 s; distance=21 kB, estimate=426 kB; lsn=0/17ECE70, redo lsn=0/17ECDE0
+2026-04-29 19:08:44.659 IST [26836] LOG:  checkpoint starting: time
+2026-04-29 19:08:54.537 IST [26836] LOG:  checkpoint complete: wrote 98 buffers (0.6%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=9.839 s, sync=0.009 s, total=9.878 s; sync files=29, longest=0.003 s, average=0.001 s; distance=962 kB, estimate=962 kB; lsn=0/18DDA50, redo lsn=0/18DD9C0
+2026-04-29 19:14:17.083 IST [26832] LOG:  received fast shutdown request
+2026-04-29 19:14:17.106 IST [26832] LOG:  aborting any active transactions
+2026-04-29 19:14:17.108 IST [26832] LOG:  background worker "logical replication launcher" (PID 26841) exited with exit code 1
+2026-04-29 19:14:17.109 IST [26836] LOG:  shutting down
+2026-04-29 19:14:17.111 IST [26836] LOG:  checkpoint starting: shutdown immediate
+2026-04-29 19:14:17.118 IST [26836] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.010 s; sync files=0, longest=0.000 s, average=0.000 s; distance=0 kB, estimate=866 kB; lsn=0/18DDB00, redo lsn=0/18DDB00
+2026-04-29 19:14:17.130 IST [26832] LOG:  database system is shut down
