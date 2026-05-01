@@ -1,0 +1,298 @@
+\documentclass[10pt,a4paper]{article}
+
+\usepackage[margin=0.62in]{geometry}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{titlesec}
+\usepackage{listings}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    urlcolor=blue
+}
+
+\titleformat{\section}{\large\bfseries}{\thesection}{0.5em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.5em}{}
+\setlist[itemize]{leftmargin=*, itemsep=1pt, topsep=2pt}
+\setlist[enumerate]{leftmargin=*, itemsep=1pt, topsep=2pt}
+\setlength{\parskip}{3pt}
+\setlength{\parindent}{0pt}
+
+\lstdefinestyle{sqlstyle}{
+    basicstyle=\ttfamily\footnotesize,
+    keywordstyle=\color{blue!70!black},
+    commentstyle=\color{gray!70!black},
+    stringstyle=\color{green!40!black},
+    breaklines=true,
+    frame=single,
+    framerule=0.3pt,
+    columns=fullflexible
+}
+
+\begin{document}
+
+\begin{center}
+    {\LARGE \textbf{Semijoin Optimization in PostgreSQL \texttt{postgres\_fdw}}}\\[-1pt]
+    {\large Local--Foreign Join Reduction using Predicate Inference and Strategy Benchmarking}\\[3pt]
+    \textbf{Project Summary Report}\\[6pt]
+    \begin{tabular}{rl}
+        Tanvi Sree J & 22B1050 \\
+        Ananya Latchupatula & 23B0966 \\
+        Charishma Gowdu & 23B0978
+    \end{tabular}
+\end{center}
+
+\section{Problem and Motivation}
+
+The project optimizes local--foreign joins in PostgreSQL's \texttt{postgres\_fdw}. In the baseline plan, PostgreSQL fetched all rows from the remote table and then performed the join locally. For the benchmark query below, the foreign scan transferred all \texttt{100000} remote orders even though the local table selected only customers with \texttt{customer\_id < 1000}.
+
+\begin{lstlisting}[style=sqlstyle]
+SELECT o.order_id, o.amount, c.name
+FROM ft_orders o
+JOIN customers c ON o.customer_id = c.customer_id
+WHERE c.customer_id < 1000;
+\end{lstlisting}
+
+Baseline behavior:
+
+\begin{lstlisting}[style=sqlstyle]
+Foreign Scan on public.ft_orders o
+Remote SQL: SELECT order_id, customer_id, amount FROM public.orders
+actual rows = 100000
+Execution Time = 131.654 ms
+\end{lstlisting}
+
+This is inefficient because the remote server sends many rows that cannot survive the local join. The main goal was to reduce network transfer and execution time while preserving correctness.
+
+\section{Implemented C-Level Optimization}
+
+We implemented a conservative semijoin-style predicate inference inside \texttt{postgres\_fdw}. From the equality join and local predicate:
+
+\begin{lstlisting}[style=sqlstyle]
+o.customer_id = c.customer_id
+c.customer_id < 1000
+\end{lstlisting}
+
+the FDW safely infers:
+
+\begin{lstlisting}[style=sqlstyle]
+o.customer_id < 1000
+\end{lstlisting}
+
+This inferred condition is added to the FDW remote expressions before SQL deparsing. The generated remote SQL becomes:
+
+\begin{lstlisting}[style=sqlstyle]
+SELECT order_id, customer_id, amount
+FROM public.orders
+WHERE ((customer_id < 1000))
+\end{lstlisting}
+
+\textbf{Key functions and changes:}
+
+\begin{itemize}
+    \item \texttt{detect\_semijoin\_candidate()}: detects whether a foreign base relation participates in a local--foreign equi-join.
+    \item \texttt{detect\_semijoin\_clause()}: validates one candidate join clause. It checks join movability, non-outer-join safety, binary operator form, integer key type, and merge/hash joinability.
+    \item \texttt{build\_semijoin\_implied\_remote\_conds()}: converts local restrictions on the local key into equivalent restrictions on the foreign key.
+    \item \texttt{postgresGetForeignPaths()}: marks eligible foreign relations during planning.
+    \item \texttt{postgresGetForeignPlan()}: appends inferred predicates to \texttt{remote\_exprs}; duplicate predicates are filtered out.
+    \item \texttt{postgresExplainForeignScan()}: exposes semijoin/cache metadata during \texttt{EXPLAIN ANALYZE}.
+\end{itemize}
+
+Additional planner metadata was added to \texttt{PgFdwRelationInfo}:
+
+\begin{lstlisting}[style=sqlstyle]
+bool semijoin_eligible;
+Var *semijoin_key;
+Var *semijoin_local_key;
+int semijoin_threshold;
+\end{lstlisting}
+
+We also added a bounded parameterized-scan cache for repeated remote probes. This cache is not the primary result, but it supports repeated-key workloads by avoiding repeated remote calls for the same parameter values.
+
+\section{Performance Impact}
+
+The optimization was validated on the actual demo data: \texttt{10000} local customers and \texttt{100000} foreign orders. Each customer key has roughly ten matching orders.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lrrr}
+\toprule
+\textbf{Metric} & \textbf{Before} & \textbf{After} & \textbf{Impact} \\
+\midrule
+Remote rows fetched & 100000 & 10000 & 90\% reduction \\
+Execution time & 131.654 ms & 25.234 ms & about 5x faster \\
+Remote predicate & absent & present & pushed down \\
+Target runtime & $<90$ ms & 25.234 ms & achieved \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+In warm demo runs, the same optimized query executed in approximately \texttt{9--25 ms}; for reporting, the conservative measured result is \texttt{25.234 ms}. The essential improvement is structural: fewer rows are transferred from the remote server.
+
+\section{Bonus Strategy Framework}
+
+In addition to the C-level FDW optimization, we implemented a SQL-level bonus framework inspired by semijoin execution strategies. These files provide a clean viva demo and reproducible benchmarking:
+
+\begin{itemize}
+    \item \texttt{BONUS\_SITE\_B\_STAGE.sql}: creates remote staging table \texttt{semijoin\_keys\_stage}.
+    \item \texttt{BONUS\_SEMIJOIN\_STRATEGIES.sql}: implements \texttt{baseline\_remote\_scan}, \texttt{batched\_any}, \texttt{staged\_remote\_join}, adaptive chooser, and benchmark logging.
+    \item \texttt{REAL\_DATA\_BONUS\_DEMO.sql}: runs real-data low/medium/high selectivity demos.
+    \item \texttt{REAL\_DATA\_STATISTICAL\_BENCHMARK.sql}: runs repeated statistical measurements.
+\end{itemize}
+
+Implemented bonus functions:
+
+\begin{lstlisting}[style=sqlstyle]
+fetch_b_baseline_remote_scan(...)
+fetch_b_semijoin_batched_any(...)
+fetch_b_semijoin_staged(...)
+fetch_b_semijoin_auto(...)
+benchmark_semijoin_strategies(...)
+run_and_log_benchmark(...)
+\end{lstlisting}
+
+\texttt{batched\_any} sends local keys in array batches using \texttt{WHERE customer\_id = ANY(key\_batch)}. \texttt{staged\_remote\_join} inserts local keys into a remote staging table and joins against it. \texttt{baseline\_remote\_scan} is the fallback. The adaptive chooser selects a strategy by distinct local key count.
+
+\subsection{Batched \texttt{ANY} Semijoin Strategy}
+
+The \texttt{batched\_any} strategy is a SQL-level implementation of semijoin filtering. Instead of scanning the full remote table, it first extracts distinct join keys from the local table and sends those keys to the remote query in fixed-size batches. In our implementation, the default batch size is \texttt{500}.
+
+\begin{lstlisting}[style=sqlstyle]
+SELECT DISTINCT c.customer_id
+FROM customers c
+WHERE c.customer_id < key_threshold;
+\end{lstlisting}
+
+The extracted keys are then used to restrict the foreign table:
+
+\begin{lstlisting}[style=sqlstyle]
+SELECT o.order_id, o.customer_id, o.amount
+FROM ft_orders o
+WHERE o.customer_id = ANY(key_batch);
+\end{lstlisting}
+
+Conceptually, for \texttt{customer\_id < 1000}, the local server sends about \texttt{999} keys instead of fetching all \texttt{100000} remote rows. Since each customer has roughly ten matching orders, the remote rows fetched reduce to about \texttt{9990}.
+
+\textbf{Why it performs well:}
+
+\begin{itemize}
+    \item It avoids transferring the full remote table.
+    \item It is simple and has low setup overhead.
+    \item It works best for low and medium selectivity, where the number of selected local keys is small enough to fit into a few batches.
+\end{itemize}
+
+\textbf{Limitation:} when the local key set becomes very large, many batches are needed. The repeated remote calls and large key arrays can reduce or eliminate the performance benefit.
+
+\subsection{Staged Remote Join Strategy}
+
+The \texttt{staged\_remote\_join} strategy is designed for larger key sets. Instead of sending keys inside large \texttt{ANY} arrays, it inserts the selected local keys into a remote staging table:
+
+\begin{lstlisting}[style=sqlstyle]
+CREATE TABLE semijoin_keys_stage (
+    session_id text NOT NULL,
+    join_key integer NOT NULL,
+    PRIMARY KEY (session_id, join_key)
+);
+\end{lstlisting}
+
+For each run, the local selected keys are inserted with a unique \texttt{session\_id}. The remote orders table is then joined with this staged key table:
+
+\begin{lstlisting}[style=sqlstyle]
+SELECT o.order_id, o.customer_id, o.amount
+FROM ft_orders o
+JOIN semijoin_keys_stage_ft k
+  ON k.join_key = o.customer_id
+WHERE k.session_id = current_session_id;
+\end{lstlisting}
+
+After the query finishes, the staged keys are deleted:
+
+\begin{lstlisting}[style=sqlstyle]
+DELETE FROM semijoin_keys_stage
+WHERE session_id = current_session_id;
+\end{lstlisting}
+
+\textbf{Why this strategy is useful:}
+
+\begin{itemize}
+    \item It avoids constructing very large \texttt{ANY} arrays.
+    \item The remote server can use an index on \texttt{join\_key}.
+    \item It is more scalable in design for very large key sets or repeated/cached workloads.
+    \item The same staged key set can be reused across multiple remote queries before cleanup.
+\end{itemize}
+
+\textbf{Why it did not win in our single-query benchmark:}
+
+\begin{itemize}
+    \item It has extra overhead for inserting keys into the remote staging table.
+    \item It must maintain indexes on the staging table.
+    \item It performs cleanup after the query.
+    \item For one-time queries with \texttt{999} keys, this overhead is larger than the benefit compared with \texttt{batched\_any}.
+\end{itemize}
+
+Therefore, \texttt{staged\_remote\_join} is not presented as the fastest strategy for the current benchmark. Instead, it demonstrates an alternative architecture that may become useful when a large staged key set is reused across multiple remote queries, allowing the staging cost to be amortized.
+
+\subsection{Adaptive Strategy Selection}
+
+The adaptive chooser uses the number of distinct local keys to decide which strategy to use:
+
+\begin{itemize}
+    \item Small key set: choose \texttt{batched\_any}.
+    \item Medium or larger reusable key set: consider \texttt{staged\_remote\_join}.
+    \item Very high selectivity: fall back to \texttt{baseline\_remote\_scan}.
+\end{itemize}
+
+This shows an important optimizer principle: a semijoin strategy should not be applied blindly. The best plan depends on selectivity, remote row reduction, network cost, and setup overhead.
+
+\section{Bonus Results and Statistical Validation}
+
+For \texttt{customer\_id < 1000}, the bonus benchmark produced:
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Strategy} & \textbf{Keys} & \textbf{Remote Rows} & \textbf{Join Rows} & \textbf{Elapsed ms} \\
+\midrule
+\texttt{batched\_any} & 999 & 9990 & 9990 & 11.749 \\
+\texttt{staged\_remote\_join} & 999 & 9990 & 9990 & 25.881 \\
+\texttt{baseline\_remote\_scan} & 999 & 100000 & 9990 & 88.158 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Correctness was verified:
+
+\begin{lstlisting}[style=sqlstyle]
+baseline_rows = 9990
+auto_rows     = 9990
+rowcount_equal = true
+\end{lstlisting}
+
+To avoid relying on one cached run, we executed nine repeated measurements per strategy, rotated execution order, and reported median/average/stddev:
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lrrrrr}
+\toprule
+\textbf{Strategy} & \textbf{Runs} & \textbf{Remote Rows} & \textbf{Median ms} & \textbf{Avg ms} & \textbf{Stddev} \\
+\midrule
+\texttt{batched\_any} & 9 & 9990 & 13.873 & 16.499 & 6.845 \\
+\texttt{staged\_remote\_join} & 9 & 9990 & 32.344 & 38.892 & 15.255 \\
+\texttt{baseline\_remote\_scan} & 9 & 100000 & 62.761 & 77.444 & 25.958 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Conclusion}
+
+The main contribution is safe predicate inference and remote predicate pushdown for local--foreign joins in \texttt{postgres\_fdw}. The optimization reduced remote transfer from \texttt{100000} rows to \texttt{10000} rows and improved the target query from \texttt{131.654 ms} to approximately \texttt{25.234 ms}, meeting the sub-\texttt{90 ms} target. The bonus framework further demonstrates multiple semijoin strategies, adaptive selection, correctness checks, experiment logging, and statistical validation.
+
+\end{document}
